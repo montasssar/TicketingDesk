@@ -1,27 +1,20 @@
-import {
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  MinLength,
-} from 'class-validator';
-import { Type } from 'class-transformer';
-import { TicketPriority } from '@prisma/client';
+import { IsEnum, IsOptional, IsString, MinLength, IsNumber } from "class-validator";
+import { TicketPriority } from "@prisma/client";
 
 export class CreateTicketDto {
   @IsString()
-  @MinLength(3)
+  @MinLength(2)
   title: string;
 
   @IsString()
-  @MinLength(5)
+  @MinLength(3)
   description: string;
 
+  @IsOptional()
   @IsEnum(TicketPriority)
-  priority: TicketPriority;
+  priority?: TicketPriority;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
+  @IsNumber()
   assigneeId?: number | null;
 }

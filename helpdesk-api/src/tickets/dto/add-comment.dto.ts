@@ -1,7 +1,7 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsString, MinLength } from "class-validator";
 
 export class AddCommentDto {
   @IsString()
-  @IsNotEmpty()
-  body!: string;
+  @MinLength(1)
+  body: string;
 }

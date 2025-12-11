@@ -1,5 +1,6 @@
 /* eslint-disable */
 // prisma/seed-user.cjs
+prisma/seed-user.cjs
 
 const { PrismaClient, UserRole } = require("@prisma/client");
 const bcrypt = require("bcryptjs");

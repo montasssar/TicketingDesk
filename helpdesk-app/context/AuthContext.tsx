@@ -26,71 +26,92 @@ export interface AuthContextValue {
   refreshProfile: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const AuthContext = createContext<AuthContextValue | undefined>(
+  undefined,
+);
 
 const TOKEN_KEY = "helpdesk_token";
+const USER_KEY = "helpdesk_user";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser>(null);
-  const [loading, setLoading] = useState<boolean>(false);
   const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  // Rehydrate auth from localStorage on mount
+  // Rehydrate auth from localStorage on mount (no /auth/profile call)
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const storedToken = localStorage.getItem(TOKEN_KEY);
-    if (!storedToken) return;
+    try {
+      const storedToken = window.localStorage.getItem(TOKEN_KEY);
+      const storedUser = window.localStorage.getItem(USER_KEY);
 
-    setToken(storedToken);
-    setLoading(true);
+      if (storedToken) {
+        setToken(storedToken);
+      }
 
-    getProfile(storedToken)
-      .then(setUser)
-      .catch(() => {
-        setUser(null);
-        setToken(null);
-        localStorage.removeItem(TOKEN_KEY);
-      })
-      .finally(() => setLoading(false));
+      if (storedUser) {
+        try {
+          const parsed = JSON.parse(storedUser) as ApiUser;
+          setUser(parsed);
+        } catch (err) {
+          console.warn("Failed to parse stored user", err);
+          window.localStorage.removeItem(USER_KEY);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to rehydrate auth from storage", err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const login = async (payload: LoginPayload) => {
+  async function login(payload: LoginPayload): Promise<void> {
     setLoading(true);
     try {
-      const { token: newToken, user: loggedUser } = await loginRequest(
+      const { token: newToken, user: newUser } = await loginRequest(
         payload,
       );
 
-      setUser(loggedUser);
       setToken(newToken);
+      setUser(newUser);
 
       if (typeof window !== "undefined") {
-        localStorage.setItem(TOKEN_KEY, newToken);
+        window.localStorage.setItem(TOKEN_KEY, newToken);
+        window.localStorage.setItem(USER_KEY, JSON.stringify(newUser));
       }
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const logout = () => {
-    setUser(null);
+  function logout(): void {
     setToken(null);
+    setUser(null);
     if (typeof window !== "undefined") {
-      localStorage.removeItem(TOKEN_KEY);
+      window.localStorage.removeItem(TOKEN_KEY);
+      window.localStorage.removeItem(USER_KEY);
     }
-  };
+  }
 
-  const refreshProfile = async () => {
+  /**
+   * Optional: manually refresh the user from the API if /auth/profile
+   * exists later. If it 404s or fails, we just log and keep current user.
+   */
+  async function refreshProfile(): Promise<void> {
     if (!token) return;
-    setLoading(true);
+
     try {
-      const updated = await getProfile(token);
-      setUser(updated);
-    } finally {
-      setLoading(false);
+      const nextUser = await getProfile(token);
+      setUser(nextUser);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+      }
+    } catch (err) {
+      console.warn("refreshProfile failed:", err);
+      // do NOT logout on failure, just keep the old user
     }
-  };
+  }
 
   const value: AuthContextValue = {
     user,
@@ -101,13 +122,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshProfile,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  );
 }
 
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error("useAuth must be used within AuthProvider");
   }
   return ctx;
 }

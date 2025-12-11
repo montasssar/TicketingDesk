@@ -22,9 +22,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!token) return; // not logged in yet
 
-    // TypeScript helper – now definitely a string
     const authToken = token as string;
-
     let cancelled = false;
 
     async function loadSummary() {
@@ -126,11 +124,18 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* CTA */}
-      <div>
+      {/* CTAS */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Link
+          href="/tickets/new"
+          className="inline-flex items-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+        >
+          + Add ticket
+        </Link>
+
         <Link
           href="/tickets"
-          className="inline-flex items-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+          className="inline-flex items-center rounded-md border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-800"
         >
           View tickets
         </Link>

@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -6,6 +8,54 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String?
+  passwordHash String // <-- FIXED: matches your auth.service.ts
+  role         UserRole
+
+  // Relations
+  createdTickets  Ticket[]        @relation("CreatedTickets")
+  assignedTickets Ticket[]        @relation("AssignedTickets")
+  comments        TicketComment[] @relation("UserComments")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Ticket {
+  id          Int            @id @default(autoincrement())
+  title       String
+  description String
+  status      TicketStatus   @default(OPEN)
+  priority    TicketPriority @default(MEDIUM)
+
+  creatorId Int
+  creator   User @relation("CreatedTickets", fields: [creatorId], references: [id])
+
+  assigneeId Int?
+  assignee   User? @relation("AssignedTickets", fields: [assigneeId], references: [id])
+
+  comments TicketComment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TicketComment {
+  id   Int    @id @default(autoincrement())
+  body String
+
+  ticketId Int
+  ticket   Ticket @relation(fields: [ticketId], references: [id])
+
+  authorId Int
+  author   User @relation("UserComments", fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now())
 }
 
 enum UserRole {
@@ -25,52 +75,4 @@ enum TicketPriority {
   LOW
   MEDIUM
   HIGH
-  URGENT
-}
-
-model User {
-  id             Int              @id @default(autoincrement())
-  email          String           @unique
-  name           String?
-  passwordHash   String
-  role           UserRole         @default(employee)
-
-  ticketsCreated Ticket[]         @relation("TicketsCreated")
-  ticketsAssigned Ticket[]        @relation("TicketsAssigned")
-  comments       TicketComment[]
-
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-}
-
-model Ticket {
-  id          Int              @id @default(autoincrement())
-  title       String
-  description String
-  status      TicketStatus     @default(OPEN)
-  priority    TicketPriority   @default(MEDIUM)
-
-  creator     User             @relation("TicketsCreated", fields: [creatorId], references: [id])
-  creatorId   Int
-
-  assignee    User?            @relation("TicketsAssigned", fields: [assigneeId], references: [id])
-  assigneeId  Int?
-
-  comments    TicketComment[]
-
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-}
-
-model TicketComment {
-  id        Int      @id @default(autoincrement())
-  body      String
-
-  ticket    Ticket   @relation(fields: [ticketId], references: [id])
-  ticketId  Int
-
-  author    User     @relation(fields: [authorId], references: [id])
-  authorId  Int
-
-  createdAt DateTime @default(now())
 }

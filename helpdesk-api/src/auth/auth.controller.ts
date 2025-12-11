@@ -1,3 +1,4 @@
+// src/auth/auth.controller.ts
 import {
   Body,
   Controller,
@@ -14,17 +15,17 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtPayload } from './jwt-payload.interface';
 
-interface RequestWithUser extends Request {
-  user?: JwtPayload;
-}
-
-export class LoginDto {
+class LoginDto {
   @IsEmail()
-  email: string;
+  email!: string;
 
   @IsString()
-  @MinLength(6)
-  password: string;
+  @MinLength(4)
+  password!: string;
+}
+
+interface RequestWithUser extends Request {
+  user?: JwtPayload;
 }
 
 @Controller('auth')
@@ -49,6 +50,6 @@ export class AuthController {
   @Get('me')
   async me(@Req() req: RequestWithUser) {
     const userId = req.user?.sub;
-    return this.authService.getProfile(userId);
+    return this.authService.getProfile(userId ?? null);
   }
 }

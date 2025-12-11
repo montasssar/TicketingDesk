@@ -1,12 +1,20 @@
-import {
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+// src/auth/auth.service.ts
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from './jwt-payload.interface';
+import { UserRole } from '@prisma/client';
+
+interface SafeUser {
+  id: number;
+  email: string;
+  name: string | null;
+  role: UserRole;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 @Injectable()
 export class AuthService {
@@ -16,52 +24,49 @@ export class AuthService {
   ) {}
 
   /**
-   * Validate email + password combo.
-   * Returns the user without the password hash if valid, otherwise null.
+   * Validate email/password. Returns user WITHOUT passwordHash on success, null otherwise.
    */
-  async validateUser(email: string, password: string) {
+  async validateUser(email: string, password: string): Promise<SafeUser | null> {
     const user = await this.prisma.user.findUnique({
       where: { email },
     });
 
-    if (!user) return null;
+    if (!user) {
+      return null;
+    }
 
-    // adjust field name if your schema uses something else than passwordHash
-    const passwordOk = await bcrypt.compare(password, user.passwordHash);
-    if (!passwordOk) return null;
+    // NOTE: your schema uses `passwordHash`
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) {
+      return null;
+    }
 
-    // strip hash before returning
-    const { passwordHash, ...safeUser } = user;
-    return safeUser;
+    const { passwordHash, ...safe } = user;
+    return safe as SafeUser;
   }
 
   /**
-   * Issue JWT + return user profile.
-   * Shape must match what the frontend lib/api.ts expects.
+   * Issue JWT and return { token, user } to match the frontend LoginResponse.
    */
-  async login(user: any) {
-    // user is the object returned by validateUser (no hash)
+  async login(user: SafeUser) {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       role: user.role,
     };
 
+    const token = this.jwtService.sign(payload);
+
     return {
-      token: this.jwtService.sign(payload),
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      },
+      token,
+      user,
     };
   }
 
   /**
-   * Used by /auth/me
+   * Profile for /auth/me
    */
-  async getProfile(userId: number | undefined) {
+  async getProfile(userId: number | undefined | null): Promise<SafeUser> {
     if (!userId) {
       throw new UnauthorizedException();
     }
@@ -74,6 +79,7 @@ export class AuthService {
         name: true,
         role: true,
         createdAt: true,
+        updatedAt: true,
       },
     });
 
@@ -81,6 +87,6 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    return user;
+    return user as SafeUser;
   }
 }
