@@ -12,10 +12,12 @@ import {
   assignTicket,
   updateTicketStatus,
   updateTicketPriority,
+  getTicketHistory,
   type TicketDetail,
   type TicketStatus,
   type TicketPriority,
   type AgentSummary,
+  type TicketHistoryEntry,
 } from "@/lib/api";
 
 export default function TicketDetailPage() {
@@ -26,6 +28,7 @@ export default function TicketDetailPage() {
   const ticketId = Number(params.id);
 
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
+  const [history, setHistory] = useState<TicketHistoryEntry[]>([]);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingAgents, setLoadingAgents] = useState(false);
@@ -54,13 +57,15 @@ export default function TicketDetailPage() {
       setError(null);
 
       try {
-        const [ticketRes, agentsRes] = await Promise.all([
+        const [ticketRes, historyRes, agentsRes] = await Promise.all([
           getTicketById(authToken, ticketId),
+          getTicketHistory(authToken, ticketId).catch(() => [] as TicketHistoryEntry[]),
           getAgents(authToken).catch(() => [] as AgentSummary[]),
         ]);
 
         if (!cancelled) {
           setTicket(ticketRes);
+          setHistory(historyRes);
           setEditStatus(ticketRes.status);
           setEditPriority(ticketRes.priority);
           setAgents(agentsRes);
@@ -308,6 +313,32 @@ export default function TicketDetailPage() {
         <p className="text-sm text-slate-200/90 whitespace-pre-line rounded-md border border-slate-800 bg-slate-950 px-3 py-3">
           {ticket.description}
         </p>
+      </section>
+
+      {/* History Log */}
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-slate-200">
+          History
+        </h2>
+        {history.length === 0 ? (
+          <p className="text-xs text-slate-400">No history events.</p>
+        ) : (
+          <div className="space-y-1 rounded-md border border-slate-800 bg-slate-950 px-3 py-3">
+            {history.map((h) => (
+              <div key={h.id} className="text-xs text-slate-400">
+                <span className="font-semibold text-slate-300">
+                  {h.changer.name ?? h.changer.email}
+                </span>{" "}
+                changed <span className="font-medium text-slate-300">{h.field}</span>{" "}
+                from <span className="text-slate-500 line-through">{h.oldValue || 'none'}</span>{" "}
+                to <span className="text-base text-emerald-400">{h.newValue || 'none'}</span>{" "}
+                <span className="text-[10px] text-slate-600 ml-2">
+                  {new Date(h.createdAt).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Comments */}

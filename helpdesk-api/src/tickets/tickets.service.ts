@@ -6,6 +6,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { FindTicketsDto } from "./dto/find-tickets.dto";
 import {
   TicketPriority,
   TicketStatus,
@@ -14,7 +15,7 @@ import {
 
 @Injectable()
 export class TicketsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   private readonly userSelect = {
     id: true,
@@ -40,17 +41,56 @@ export class TicketsService {
    * - employee + userId => only their tickets
    * - anything else      => all tickets
    */
-  async listForUser(userId: number | null, role: UserRole) {
-    const where =
-      role === "employee" && userId
-        ? { creatorId: userId }
-        : {};
+  async listForUser(
+    userId: number | null,
+    role: UserRole,
+    params: FindTicketsDto,
+  ) {
+    const { page = 1, limit = 10, status, priority, search } = params;
+    const skip = (page - 1) * limit;
 
-    return this.prisma.ticket.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      include: this.ticketDetailInclude(),
-    });
+    const where: any = {};
+
+    // Role-based filter
+    if (role === 'employee' && userId) {
+      where.creatorId = userId;
+    }
+
+    // Status & Priority filters
+    if (status) {
+      where.status = status;
+    }
+    if (priority) {
+      where.priority = priority;
+    }
+
+    // Search filter
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.ticket.findMany({
+        where,
+        take: limit,
+        skip,
+        orderBy: { createdAt: 'desc' },
+        include: this.ticketDetailInclude(),
+      }),
+      this.prisma.ticket.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        lastPage: Math.ceil(total / limit),
+      },
+    };
   }
 
   /* SINGLE TICKET DETAIL */
@@ -73,38 +113,44 @@ export class TicketsService {
    * - anything else      => stats for all tickets
    */
   async getSummary(userId: number | null, role: UserRole) {
-    const whereBase =
-      role === "employee" && userId
-        ? { creatorId: userId }
-        : {};
+    // 1. Total Tickets (Admin uses this, usually)
+    const totalTicketsCount = await this.prisma.ticket.count();
 
-    const [total, open, inProgress, resolved, closed] =
-      await Promise.all([
-        this.prisma.ticket.count({ where: whereBase }),
-        this.prisma.ticket.count({
-          where: { ...whereBase, status: TicketStatus.OPEN },
-        }),
-        this.prisma.ticket.count({
-          where: {
-            ...whereBase,
-            status: TicketStatus.IN_PROGRESS,
-          },
-        }),
-        this.prisma.ticket.count({
-          where: { ...whereBase, status: TicketStatus.RESOLVED },
-        }),
-        this.prisma.ticket.count({
-          where: { ...whereBase, status: TicketStatus.CLOSED },
-        }),
-      ]);
+    // 2. My Tickets
+    //    - Employee: Created by me
+    //    - Agent: Assigned to me
+    let myTicketsCount = 0;
+    if (userId) {
+      if (role === 'agent' || role === 'admin') {
+        myTicketsCount = await this.prisma.ticket.count({
+          where: { assigneeId: userId }
+        });
+      } else {
+        myTicketsCount = await this.prisma.ticket.count({
+          where: { creatorId: userId }
+        });
+      }
+    }
 
-    return {
-      total,
-      open,
-      inProgress,
-      resolved,
-      closed,
+    // 3. Team Queue
+    //    - For Agents: Unassigned OPEN tickets
+    let teamQueueCount = 0;
+    if (role === 'agent' || role === 'admin') {
+      teamQueueCount = await this.prisma.ticket.count({
+        where: { assigneeId: null, status: 'OPEN' }
+      });
+    }
+
+    // Return the shape expected by DashboardPage
+    const summary: any = {
+      totalTicketsCount,
+      myTicketsCount,
+      teamQueueCount,
+      // Keep old fields for backward compat if needed, or remove them if api.ts is updated
+      total: totalTicketsCount,
     };
+
+    return summary;
   }
 
   /* CREATE TICKET */
@@ -138,8 +184,8 @@ export class TicketsService {
         // optional assignee
         assignee: dto.assigneeId
           ? {
-              connect: { id: dto.assigneeId },
-            }
+            connect: { id: dto.assigneeId },
+          }
           : undefined,
       },
       include: this.ticketDetailInclude(),
@@ -148,39 +194,149 @@ export class TicketsService {
     return ticket;
   }
 
-  /* ASSIGN / UNASSIGN TICKET */
-  async assign(id: number, assigneeId: number | null) {
-    const data =
-      assigneeId != null
-        ? { assignee: { connect: { id: assigneeId } } }
-        : { assignee: { disconnect: true } };
+  /* HISTORY */
+  async getHistory(ticketId: number) {
+    return this.prisma.ticketHistory.findMany({
+      where: { ticketId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        changer: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+      },
+    });
+  }
 
-    await this.prisma.ticket.update({
-      where: { id },
-      data,
+  /* ASSIGN */
+  async assign(ticketId: number, assigneeId: number | null, userId: number) {
+    // Check previous assignee
+    const current = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { assigneeId: true, status: true },
     });
 
-    return this.getById(id);
+    if (!current) {
+      throw new BadRequestException("Ticket not found");
+    }
+
+    // If no change, return
+    if (current.assigneeId === assigneeId) {
+      return this.getById(ticketId);
+    }
+
+    const [ticket] = await this.prisma.$transaction([
+      this.prisma.ticket.update({
+        where: { id: ticketId },
+        data: {
+          assigneeId,
+          // Auto-update status to IN_PROGRESS if it was OPEN
+          status: current.status === 'OPEN' ? 'IN_PROGRESS' : undefined
+        },
+        include: this.ticketDetailInclude(),
+      }),
+      this.prisma.ticketHistory.create({
+        data: {
+          ticketId,
+          changerId: userId,
+          field: "assignee",
+          oldValue: current.assigneeId?.toString() ?? null,
+          newValue: assigneeId?.toString() ?? null,
+        },
+      }),
+    ]);
+
+    // If status changed, we should probably log that too?
+    // For simplicity, we'll let the assignee log suffice, or we can add a second history entry.
+    // Ideally, we check if status changed and add another history entry.
+    if (current.status === 'OPEN') {
+      await this.prisma.ticketHistory.create({
+        data: {
+          ticketId,
+          changerId: userId,
+          field: "status",
+          oldValue: "OPEN",
+          newValue: "IN_PROGRESS"
+        }
+      });
+    }
+
+    return ticket;
   }
 
   /* STATUS */
-  async updateStatus(id: number, status: TicketStatus) {
-    await this.prisma.ticket.update({
-      where: { id },
-      data: { status },
+  async updateStatus(ticketId: number, status: TicketStatus, userId: number) {
+    // 1. Get current status for history
+    const current = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { status: true },
     });
 
-    return this.getById(id);
+    if (!current) {
+      throw new BadRequestException("Ticket not found");
+    }
+
+    if (current.status === status) {
+      return this.getById(ticketId);
+    }
+
+    // 2. Transaction: Update + Log
+    const [ticket] = await this.prisma.$transaction([
+      this.prisma.ticket.update({
+        where: { id: ticketId },
+        data: { status },
+        include: this.ticketDetailInclude(),
+      }),
+      this.prisma.ticketHistory.create({
+        data: {
+          ticketId,
+          changerId: userId,
+          field: "status",
+          oldValue: current.status,
+          newValue: status,
+        },
+      }),
+    ]);
+
+    return ticket;
   }
 
   /* PRIORITY */
-  async updatePriority(id: number, priority: TicketPriority) {
-    await this.prisma.ticket.update({
-      where: { id },
-      data: { priority },
+  async updatePriority(
+    ticketId: number,
+    priority: TicketPriority,
+    userId: number,
+  ) {
+    const current = await this.prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { priority: true },
     });
 
-    return this.getById(id);
+    if (!current) {
+      throw new BadRequestException("Ticket not found");
+    }
+
+    if (current.priority === priority) {
+      return this.getById(ticketId);
+    }
+
+    const [ticket] = await this.prisma.$transaction([
+      this.prisma.ticket.update({
+        where: { id: ticketId },
+        data: { priority },
+        include: this.ticketDetailInclude(),
+      }),
+      this.prisma.ticketHistory.create({
+        data: {
+          ticketId,
+          changerId: userId,
+          field: "priority",
+          oldValue: current.priority,
+          newValue: priority,
+        },
+      }),
+    ]);
+
+    return ticket;
   }
 
   /* COMMENTS */

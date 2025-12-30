@@ -1,0 +1,22 @@
+services:
+  api:
+    build:
+      context: ./helpdesk-api
+    ports:
+      - "4000:4000"
+    env_file:
+      - ./helpdesk-api/.env
+    restart: always
+
+  app:
+    build:
+      context: ./helpdesk-app
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./helpdesk-app/.env.local
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:4000
+    depends_on:
+      - api
+    restart: always

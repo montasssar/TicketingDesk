@@ -66,6 +66,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Listen for 401s from api.ts
+  useEffect(() => {
+    function onUnauthorized() {
+      logout();
+    }
+    window.addEventListener("auth:unauthorized", onUnauthorized);
+    return () => {
+      window.removeEventListener("auth:unauthorized", onUnauthorized);
+    };
+  }, []);
+
   async function login(payload: LoginPayload): Promise<void> {
     setLoading(true);
     try {

@@ -28,6 +28,25 @@ export interface TicketSummary {
   priority: TicketPriority;
 }
 
+export interface PaginationMeta {
+  total: number;
+  page: number;
+  lastPage: number;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta: PaginationMeta;
+}
+
+export interface TicketFilterOptions {
+  page?: number;
+  limit?: number;
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  search?: string;
+}
+
 export interface TicketComment {
   id: number;
   body: string;
@@ -44,12 +63,29 @@ export interface TicketDetail extends TicketSummary {
   updatedAt: string;
 }
 
+export interface TicketHistoryEntry {
+  id: number;
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+  createdAt: string;
+  changer: {
+    id: number;
+    name: string | null;
+    email: string;
+  };
+}
+
 export interface TicketsSummaryStats {
-  total: number;
-  open: number;
-  inProgress: number;
-  resolved: number;
-  closed: number;
+  myTicketsCount: number;
+  teamQueueCount: number;
+  totalTicketsCount: number;
+  // Legacy fields (optional if you want to keep them)
+  total?: number;
+  open?: number;
+  inProgress?: number;
+  resolved?: number;
+  closed?: number;
 }
 
 export interface LoginPayload {
@@ -110,6 +146,12 @@ async function handleJson<T>(res: Response): Promise<T> {
   const defaultMessage = res.statusText || "Request failed";
 
   if (!res.ok) {
+    if (res.status === 401) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("auth:unauthorized"));
+      }
+    }
+
     if (!text) {
       throw new Error(defaultMessage);
     }
@@ -180,14 +222,22 @@ export async function getAgents(token: string): Promise<AgentSummary[]> {
 
 export async function getTickets(
   token: string,
-): Promise<TicketSummary[]> {
-  const res = await fetch(`${API_URL}/tickets`, {
+  options?: TicketFilterOptions,
+): Promise<PaginatedResponse<TicketSummary>> {
+  const params = new URLSearchParams();
+  if (options?.page) params.set("page", options.page.toString());
+  if (options?.limit) params.set("limit", options.limit.toString());
+  if (options?.status) params.set("status", options.status);
+  if (options?.priority) params.set("priority", options.priority);
+  if (options?.search) params.set("search", options.search);
+
+  const res = await fetch(`${API_URL}/tickets?${params.toString()}`, {
     headers: authHeaders(token),
     cache: "no-store",
   });
 
-  // Backend returns full Ticket, but this page only needs summary.
-  return handleJson<TicketSummary[]>(res);
+  // Backend returns { data: [], meta: {} }
+  return handleJson<PaginatedResponse<TicketSummary>>(res);
 }
 
 export async function getTicketById(
@@ -280,4 +330,16 @@ export async function getTicketsSummary(
   });
 
   return handleJson<TicketsSummaryStats>(res);
+}
+
+export async function getTicketHistory(
+  token: string,
+  ticketId: number,
+): Promise<TicketHistoryEntry[]> {
+  const res = await fetch(`${API_URL}/tickets/${ticketId}/history`, {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+
+  return handleJson<TicketHistoryEntry[]>(res);
 }

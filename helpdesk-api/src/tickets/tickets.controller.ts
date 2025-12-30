@@ -10,6 +10,7 @@ import {
   Req,
   UseGuards,
   BadRequestException,
+  Query,
 } from "@nestjs/common";
 import {
   TicketPriority,
@@ -19,6 +20,7 @@ import {
 
 import { TicketsService } from "./tickets.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { FindTicketsDto } from "./dto/find-tickets.dto";
 
 /* DTOs kept inline & light */
 
@@ -45,7 +47,7 @@ interface AssignTicketDto {
 @UseGuards(JwtAuthGuard)
 @Controller("tickets")
 export class TicketsController {
-  constructor(private readonly ticketsService: TicketsService) {}
+  constructor(private readonly ticketsService: TicketsService) { }
 
   /**
    * Extract user info from the request.
@@ -90,11 +92,11 @@ export class TicketsController {
 
   /* LIST */
   @Get()
-  list(@Req() req: any) {
+  list(@Req() req: any, @Query() query: FindTicketsDto) {
     const { userId, role } = this.extractUser(req, {
       requireId: false,
     });
-    return this.ticketsService.listForUser(userId, role);
+    return this.ticketsService.listForUser(userId, role, query);
   }
 
   /* SUMMARY (for dashboard cards) */
@@ -132,7 +134,11 @@ export class TicketsController {
 
   /* ASSIGN / UNASSIGN */
   @Patch(":id/assign")
-  assign(@Param("id") id: string, @Body() dto: AssignTicketDto) {
+  assign(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Body() dto: AssignTicketDto,
+  ) {
     if (dto.assigneeId === undefined) {
       throw new BadRequestException("assigneeId is required");
     }
@@ -142,12 +148,21 @@ export class TicketsController {
       throw new BadRequestException("Invalid ticket id");
     }
 
-    return this.ticketsService.assign(ticketId, dto.assigneeId);
+    const { userId } = this.extractUser(req, { requireId: true });
+    return this.ticketsService.assign(
+      ticketId,
+      dto.assigneeId,
+      userId as number,
+    );
   }
 
   /* STATUS */
   @Patch(":id/status")
-  updateStatus(@Param("id") id: string, @Body() dto: UpdateTicketDto) {
+  updateStatus(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Body() dto: UpdateTicketDto,
+  ) {
     if (!dto.status) {
       throw new BadRequestException("status is required");
     }
@@ -157,12 +172,21 @@ export class TicketsController {
       throw new BadRequestException("Invalid ticket id");
     }
 
-    return this.ticketsService.updateStatus(ticketId, dto.status);
+    const { userId } = this.extractUser(req, { requireId: true });
+    return this.ticketsService.updateStatus(
+      ticketId,
+      dto.status,
+      userId as number,
+    );
   }
 
   /* PRIORITY */
   @Patch(":id/priority")
-  updatePriority(@Param("id") id: string, @Body() dto: UpdateTicketDto) {
+  updatePriority(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Body() dto: UpdateTicketDto,
+  ) {
     if (!dto.priority) {
       throw new BadRequestException("priority is required");
     }
@@ -172,7 +196,12 @@ export class TicketsController {
       throw new BadRequestException("Invalid ticket id");
     }
 
-    return this.ticketsService.updatePriority(ticketId, dto.priority);
+    const { userId } = this.extractUser(req, { requireId: true });
+    return this.ticketsService.updatePriority(
+      ticketId,
+      dto.priority,
+      userId as number,
+    );
   }
 
   /* COMMENTS */
@@ -198,5 +227,14 @@ export class TicketsController {
       userId as number,
       dto.body,
     );
+  }
+
+  @Get(":id/history")
+  getHistory(@Param("id") id: string) {
+    const ticketId = Number(id);
+    if (!ticketId) {
+      throw new BadRequestException("Invalid ticket id");
+    }
+    return this.ticketsService.getHistory(ticketId);
   }
 }

@@ -6,13 +6,10 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-
     "strict": true,
     "strictNullChecks": true,
-
     "noImplicitAny": false,
     "strictPropertyInitialization": false,
-
     "target": "es2017",
     "sourceMap": true,
     "outDir": "./dist",
@@ -21,6 +18,12 @@
     "skipLibCheck": true,
     "esModuleInterop": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*",
+    "test/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }
