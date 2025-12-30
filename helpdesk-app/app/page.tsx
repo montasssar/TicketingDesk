@@ -9,12 +9,6 @@ export default function HomePage() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
-  // If logged in, go directly to dashboard
-  useEffect(() => {
-    if (!loading && user) {
-      router.replace("/dashboard");
-    }
-  }, [loading, user, router]);
 
   // While checking auth
   if (loading) {

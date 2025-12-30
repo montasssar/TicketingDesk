@@ -1,76 +1,19 @@
 // app/(protected)/tickets/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { getTickets, type TicketSummary } from "@/lib/api";
+import { useTickets } from "@/hooks/useTickets";
 
 export default function TicketsPage() {
   const { token } = useAuth();
-  const [tickets, setTickets] = useState<TicketSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Filter & Pagination keys
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<string>("");
-  const [priority, setPriority] = useState<string>("");
-
-  useEffect(() => {
-    if (!token) return;
-
-    const authToken = token as string;
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const res = await getTickets(authToken, {
-          page,
-          limit: 5,
-          search,
-          status: status as any || undefined,
-          priority: priority as any || undefined,
-        });
-
-        if (!cancelled) {
-          setTickets(res.data);
-          setTotalPages(res.meta.lastPage);
-        }
-      } catch (err) {
-        console.error(err);
-        if (!cancelled) {
-          setError("Could not load tickets.");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    // Debounce search slightly if desired, or just load on effect
-    const timer = setTimeout(() => {
-      load();
-    }, 300);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [token, page, search, status, priority]);
+  const { tickets, loading, error, filters, setFilter } = useTickets({ limit: 5 });
 
   if (!token) {
-    return (
-      <div className="max-w-4xl mx-auto px-6 pt-10 text-slate-200">
-        <p className="text-sm">You must be logged in to view tickets.</p>
-      </div>
-    );
+    // Ideally this is handled by middleware, but for TS correctness or fast-refresh fallback:
+    return null;
   }
 
   return (
@@ -99,20 +42,14 @@ export default function TicketsPage() {
         <input
           type="text"
           placeholder="Search tickets..."
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1); // reset to page 1 on filter change
-          }}
+          value={filters.search}
+          onChange={(e) => setFilter.search(e.target.value)}
           className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
         />
 
         <select
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(1);
-          }}
+          value={filters.status}
+          onChange={(e) => setFilter.status(e.target.value)}
           className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 focus:border-emerald-500 focus:outline-none"
         >
           <option value="">All Statuses</option>
@@ -123,11 +60,8 @@ export default function TicketsPage() {
         </select>
 
         <select
-          value={priority}
-          onChange={(e) => {
-            setPriority(e.target.value);
-            setPage(1);
-          }}
+          value={filters.priority}
+          onChange={(e) => setFilter.priority(e.target.value)}
           className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 focus:border-emerald-500 focus:outline-none"
         >
           <option value="">All Priorities</option>
@@ -167,10 +101,10 @@ export default function TicketsPage() {
 
                 <span
                   className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${t.priority === "HIGH"
-                      ? "bg-red-500/80 text-red-50"
-                      : t.priority === "MEDIUM"
-                        ? "bg-amber-500/80 text-slate-950"
-                        : "bg-emerald-500/80 text-slate-950"
+                    ? "bg-red-500/80 text-red-50"
+                    : t.priority === "MEDIUM"
+                      ? "bg-amber-500/80 text-slate-950"
+                      : "bg-emerald-500/80 text-slate-950"
                     }`}
                 >
                   {t.priority}
@@ -185,18 +119,18 @@ export default function TicketsPage() {
       {!loading && tickets.length > 0 && (
         <div className="mt-6 flex items-center justify-center gap-4">
           <button
-            disabled={page <= 1}
-            onClick={() => setPage(p => p - 1)}
+            disabled={filters.page <= 1}
+            onClick={() => setFilter.page(p => p - 1)}
             className="rounded px-3 py-1 text-sm font-medium text-slate-300 hover:text-white disabled:opacity-50"
           >
             Previous
           </button>
           <span className="text-sm text-slate-400">
-            Page {page} of {totalPages}
+            Page {filters.page} of {filters.totalPages}
           </span>
           <button
-            disabled={page >= totalPages}
-            onClick={() => setPage(p => p + 1)}
+            disabled={filters.page >= filters.totalPages}
+            onClick={() => setFilter.page(p => p + 1)}
             className="rounded px-3 py-1 text-sm font-medium text-slate-300 hover:text-white disabled:opacity-50"
           >
             Next

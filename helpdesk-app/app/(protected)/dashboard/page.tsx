@@ -4,54 +4,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { getTicketsSummary, type TicketsSummaryStats } from "@/lib/api";
+import { type TicketsSummaryStats } from "@/lib/api";
+import { useDashboardStats } from "@/hooks/useDashboardStats";
 
-const EMPTY_STATS: TicketsSummaryStats = {
-  myTicketsCount: 0,
-  teamQueueCount: 0,
-  totalTicketsCount: 0,
-};
 
 export default function DashboardPage() {
-  const { user, token } = useAuth();
+  const { user } = useAuth();
+  const { stats, loading, error } = useDashboardStats({
+    autoRefresh: true,
+    refreshIntervalMs: 30000
+  });
 
-  const [stats, setStats] = useState<TicketsSummaryStats>(EMPTY_STATS);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!token) return; // not logged in yet
-
-    const authToken = token as string;
-    let cancelled = false;
-
-    async function loadSummary() {
-      setLoading(true);
-      setError(null);
-      try {
-        const summary = await getTicketsSummary(authToken);
-        if (!cancelled) {
-          setStats(summary);
-        }
-      } catch (err) {
-        console.error(err);
-        if (!cancelled) {
-          setError("Could not load ticket summary.");
-          setStats(EMPTY_STATS);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadSummary();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
 
   const rawRole = user?.role ?? "employee";
   const role: "employee" | "agent" | "admin" =

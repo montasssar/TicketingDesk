@@ -14,6 +14,7 @@ import {
   type ApiUser,
   type LoginPayload,
 } from "@/lib/api";
+import Cookies from "js-cookie";
 
 type AuthUser = ApiUser | null;
 
@@ -38,16 +39,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Rehydrate auth from localStorage on mount (no /auth/profile call)
+  // Rehydrate auth from cookies/localStorage on mount
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     try {
-      const storedToken = window.localStorage.getItem(TOKEN_KEY);
+      // Prioritize Cookie for token (middleware compatible), fallback to localStorage if needed
+      const storedToken = Cookies.get(TOKEN_KEY) || window.localStorage.getItem(TOKEN_KEY);
       const storedUser = window.localStorage.getItem(USER_KEY);
 
       if (storedToken) {
         setToken(storedToken);
+        // Ensure synchronization if it was missing in one place
+        if (!Cookies.get(TOKEN_KEY)) Cookies.set(TOKEN_KEY, storedToken, { expires: 7, path: "/" });
       }
 
       if (storedUser) {
@@ -88,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(newUser);
 
       if (typeof window !== "undefined") {
-        window.localStorage.setItem(TOKEN_KEY, newToken);
+        Cookies.set(TOKEN_KEY, newToken, { expires: 7, path: "/" }); // valid for 7 days
         window.localStorage.setItem(USER_KEY, JSON.stringify(newUser));
       }
     } finally {
@@ -100,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUser(null);
     if (typeof window !== "undefined") {
-      window.localStorage.removeItem(TOKEN_KEY);
+      Cookies.remove(TOKEN_KEY, { path: "/" });
       window.localStorage.removeItem(USER_KEY);
     }
   }
