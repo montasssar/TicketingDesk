@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -55,7 +55,10 @@ describe('TicketFlow (e2e)', () => {
         const user = await prisma.user.findUnique({
             where: { email: testUser.email },
         });
-        userId = user.id;
+        expect(user).not.toBeNull();
+        if (user) {
+            userId = user.id;
+        }
         expect(userId).toBeDefined();
     });
 
